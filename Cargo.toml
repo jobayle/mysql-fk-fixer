@@ -1,0 +1,9 @@
+[package]
+name = "mysql-fk-fixer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dotenvy_macro = "0.15.7"
+sqlx = { version = "0.6", features = [ "runtime-tokio-rustls", "mysql", "tls" ] }
+tokio = { version = "1.27.0", features = ["full"] }
