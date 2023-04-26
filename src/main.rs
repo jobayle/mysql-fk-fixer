@@ -1,71 +1,33 @@
-use std::fmt::Debug;
-
-use sqlx::{mysql::{MySqlPoolOptions, MySqlRow}, MySqlConnection, Connection, error::BoxDynError, Executor};
+use mysql::{Conn, Opts};
 use dotenvy_macro::dotenv;
 
-#[derive(Debug)]
-struct FkInfo {
-    name: String,
-    schema: String,
-    table: String,
-    column: String,
-    ref_table: String,
-    ref_column: String,
-}
+pub mod fk;
+use fk::{FkInfo, FkChecker};
 
-impl From<&MySqlRow> for FkInfo {
-    fn from(row: &MySqlRow) -> Self {
-        FkInfo{
-            name: String::from(""),
-            schema: String::from(""),
-            table: String::from(""),
-            column: String::from(""),
-            ref_table: String::from(""),
-            ref_column: String::from(""),
+pub mod utils;
+use utils::{exit_on_err, continue_on_err};
+
+fn main() {
+    let base_url = dotenv!("MYSQL_URL");
+    let url = format!("{base_url}information_schema");
+    println!("Connecting to {url}");
+    let opts = exit_on_err!(Opts::from_url(url.as_str()), "Could not parse connection URL");
+    let mut conn = exit_on_err!(Conn::new(opts), "Could not connect to MySQL");
+
+    let version_numbers = conn.server_version();
+    println!("MySQL server version: {}.{}.{}", version_numbers.0, version_numbers.1, version_numbers.2);
+
+    let fk_constraints = exit_on_err!(FkInfo::query_fk_constraints(&mut conn), "Could not get list of FK constraints");
+
+    println!("Found {} Foreign Key Constraints to check...", fk_constraints.len());
+    //fk_constraints.iter().for_each(|fk| println!("fk: {fk:?}")) // DBG
+    for fk in fk_constraints {
+        conn.select_db(&fk.schema);
+        println!("Checking Foreign Key constraint {fk}");
+        let res = FkChecker::check(&fk, &mut conn);
+        let res = continue_on_err!(res, "Could not check Foreign Key Constraint");
+        if res.len() > 0 {
+            println!("{} invalid foreign references found in table {} column {}", res.len(), fk.table, fk.column);
         }
     }
-}
-
-async fn query_fk_constraints(conn: &mut MySqlConnection) -> Result<Vec<FkInfo>, BoxDynError>
-{
-    let res = conn.fetch_all("").await?;
-
-    let foo: Vec<FkInfo> = res.iter()
-        .map(FkInfo::from)
-        .collect();
-
-    Ok(foo)
-}
-
-macro_rules! exit_on_err {
-    ( $x:ident, $y:expr ) => {
-        {
-            if let Err(what) = $x {
-                println!("ERROR: Could not connect to database:");
-                println!("{what}");
-                return;
-            }
-            $x.unwrap()
-        }
-    };
-}
-
-#[tokio::main]
-async fn main() {
-    let db_url = dotenv!("MYSQL_URL");
-    println!("Connecting to database {db_url}");
-
-    // Connect to information_schema and fetch all the FK constraints
-    let information_schema = format!("{db_url}information_schema");
-    println!("Fetching schema infos {information_schema}");
-    let conn_res = MySqlConnection::connect(information_schema.as_str()).await;
-    let mut conn = exit_on_err!(conn_res, "ERROR: Could not connect to database:");
-
-    let fks = query_fk_constraints(&mut conn).await.unwrap();
-    fks.iter().for_each(|fk| println!("FK found: {fk:?}"));
-
-    let mkpool = MySqlPoolOptions::new()
-        .max_connections(5)
-        .connect(db_url).await;
-    let pool = exit_on_err!(mkpool, "ERROR: Could not connect to database:");
 }
