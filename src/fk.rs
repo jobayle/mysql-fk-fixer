@@ -40,8 +40,8 @@ impl FkInfo {
                 k.COLUMN_NAME,
                 k.REFERENCED_TABLE_NAME,
                 k.REFERENCED_COLUMN_NAME
-            FROM KEY_COLUMN_USAGE k
-            JOIN TABLE_CONSTRAINTS c ON k.CONSTRAINT_NAME=c.CONSTRAINT_NAME AND c.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA
+            FROM information_schema.KEY_COLUMN_USAGE k
+            JOIN information_schema.TABLE_CONSTRAINTS c ON k.CONSTRAINT_NAME=c.CONSTRAINT_NAME AND c.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA
             WHERE c.CONSTRAINT_TYPE='FOREIGN KEY';", |t| FkInfo::new(t))?;
     
         Ok(res)
@@ -50,22 +50,48 @@ impl FkInfo {
 
 impl Display for FkInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} in schema {} on table {} column {} references table {} column {}",
+        write!(f, "{} in schema {} on table {} column {} referencing table {} column {}",
             self.name, self.schema, self.table, self.column, self.ref_table, self.ref_column)
     }
 }
 
-pub struct FkChecker {}
+/// Configuration for function check()
+pub struct FkChecker {
+    pub auto_delete: bool,
+}
 
 impl FkChecker {
-    pub fn check(fk_info: &FkInfo, conn: &mut Conn) -> Result<Vec<u32>> {
+    /// Return a list of all invalid foreign references.
+    /// Deletes the invalid rows if auto_delete is true.
+    /// Param T should be the type of the foreign column.
+    pub fn check<T>(&self, fk_info: &FkInfo, conn: &mut Conn) -> Result<Vec<T>>
+    where T: FromValue
+    {
         let query = format!(
             r"SELECT a.{}
-            FROM {} a
-            LEFT JOIN {} b ON a.{}=b.{}
+            FROM {}.{} a
+            LEFT JOIN {}.{} b ON a.{}=b.{}
             WHERE a.{} IS NOT NULL AND b.{} IS NULL;",
-            fk_info.column, fk_info.table, fk_info.ref_table, fk_info.column, fk_info.ref_column, fk_info.column, fk_info.ref_column);
+            fk_info.column, fk_info.schema, fk_info.table, fk_info.schema, fk_info.ref_table, fk_info.column, fk_info.ref_column, fk_info.column, fk_info.ref_column);
 
-        return Ok(conn.query_map(query, |id: u32| id)?)
+        let ids = conn.query::<Value, String>(query)?;
+        if self.auto_delete {
+            self.delete_all(fk_info, &ids, conn);
+        }
+
+        let res: Vec<T> = ids.into_iter() // into_iter consumes the collection
+            .map(|id| T::from_value(id))
+            .collect();
+
+        return Ok(res)
+    }
+
+    fn delete_all(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut Conn) {
+        let query = format!("DELETE FROM {}.{} WHERE {}=?", fk_info.schema, fk_info.table, fk_info.column);
+        let bar = query.with(ids.iter().map(|x| (x,))).batch(conn);
+        if let Err(error) = bar {
+            println!("ERROR: Could not batch delete rows having an invalid foreign reference from table {}.{}", fk_info.schema, fk_info.table);
+            println!("ERROR: {error}");
+        }
     }
 }
