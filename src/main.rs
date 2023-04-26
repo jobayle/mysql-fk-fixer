@@ -10,6 +10,7 @@ use utils::{exit_on_err, continue_on_err};
 fn main() {
     let url = dotenv!("MYSQL_URL");
     let auto_delete = exit_on_err!(dotenv!("AUTO_DELETE").trim().parse::<bool>(), "Could not parse AUTO_DELETE, allowed values: true | false");
+    let dump_invalid_rows = exit_on_err!(dotenv!("DUMP_INVALID_ROWS").trim().parse::<bool>(), "Could not parse DUMP_INVALID_ROWS, allowed values: true | false");
 
     println!("Connecting to {url}");
     let opts = exit_on_err!(Opts::from_url(url), "Could not parse connection URL");
@@ -22,7 +23,7 @@ fn main() {
 
     println!("Found {} Foreign Key Constraints to check...", fk_constraints.len());
 
-    let checker = FkChecker { auto_delete: auto_delete };
+    let checker = FkChecker { auto_delete, dump_invalid_rows };
     for fk in fk_constraints {
         println!("Checking Foreign Key constraint {fk}");
         let res = checker.check::<u32>(&fk, &mut conn);

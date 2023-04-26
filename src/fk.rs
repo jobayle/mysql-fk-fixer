@@ -1,5 +1,6 @@
 //! Foreign Key Constraint infos and query function
 
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use mysql::*;
@@ -58,6 +59,7 @@ impl Display for FkInfo {
 /// Configuration for function check()
 pub struct FkChecker {
     pub auto_delete: bool,
+    pub dump_invalid_rows: bool,
 }
 
 impl FkChecker {
@@ -75,6 +77,11 @@ impl FkChecker {
             fk_info.column, fk_info.schema, fk_info.table, fk_info.schema, fk_info.ref_table, fk_info.column, fk_info.ref_column, fk_info.column, fk_info.ref_column);
 
         let ids = conn.query::<Value, String>(query)?;
+
+        if self.dump_invalid_rows {
+            self.dump_rows(fk_info, &ids, conn)
+        }
+
         if self.auto_delete {
             self.delete_all(fk_info, &ids, conn);
         }
@@ -86,12 +93,41 @@ impl FkChecker {
         return Ok(res)
     }
 
+    /// Deletes all rows having an invalid foreign reference
+    /// Performs one batch query
+    /// Error logged, not returned
+    /// FIXME delete might fail if this row is referenced in another table
     fn delete_all(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut Conn) {
         let query = format!("DELETE FROM {}.{} WHERE {}=?", fk_info.schema, fk_info.table, fk_info.column);
         let bar = query.with(ids.iter().map(|x| (x,))).batch(conn);
         if let Err(error) = bar {
             println!("ERROR: Could not batch delete rows having an invalid foreign reference from table {}.{}", fk_info.schema, fk_info.table);
             println!("ERROR: {error}");
+        }
+    }
+
+    fn dump_rows(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut Conn) {
+        let query = format!("SELECT * FROM {}.{} WHERE {}=?", fk_info.schema, fk_info.table, fk_info.column);
+        let preped = conn.prep(query).unwrap();
+        
+        for id in ids {
+            // FIXME use exec_iter to merge all results for all ids
+            let res = conn.exec_map(&preped, (id,),move |row: Row| {
+                // FIXME get rid of map to preserve order of columns
+                let mut res: HashMap<String, Option<String>> = HashMap::new();
+
+                for idx in 0..row.len() {
+                    let key = row.columns_ref()[idx].name_str().to_string();
+                    let val: Option<Value> = row.get(idx);
+                    let val = val.map(|v| v.as_sql(true));
+                    res.insert(key, val);
+                }
+                res
+            });
+            match serde_json::ser::to_string(&res.unwrap()) {
+                Ok(s) => println!("{s}"),
+                Err(e) => println!("ERROR: {e}")
+            }
         }
     }
 }
