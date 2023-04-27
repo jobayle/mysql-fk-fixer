@@ -1,7 +1,10 @@
 //! Foreign Key Constraint infos and query function
 
-use std::collections::HashMap;
 use std::fmt::Display;
+use std::ops::Add;
+use std::path::Path;
+use std::{fs, io};
+use std::io::{stdout, Write, ErrorKind, BufWriter};
 
 use mysql::*;
 use mysql::prelude::*;
@@ -60,9 +63,31 @@ impl Display for FkInfo {
 pub struct FkChecker {
     pub auto_delete: bool,
     pub dump_invalid_rows: bool,
+    pub dump_location: String,
 }
 
 impl FkChecker {
+
+    /// Checks that dump_location exists and is writeable
+    /// If not exist, will try to create the forlder
+    pub fn new(auto_delete: bool, dump_invalid_rows: bool, dump_location: String) -> Result<Self> {
+        if !dump_location.is_empty() {
+            let path = Path::new(dump_location.as_str());
+            if !path.exists() {
+                fs::create_dir(path)?;
+            }
+            if !path.is_dir() {
+                return Err(Error::IoError(io::Error::new(ErrorKind::Other, "Dump location is not a directory")));
+            }
+            let attr = fs::metadata(path)?;
+            if attr.permissions().readonly() {
+                return Err(Error::IoError(io::Error::new(ErrorKind::PermissionDenied, "Dump location is not writeable")));
+            }
+        }
+
+        Ok(Self { auto_delete, dump_invalid_rows, dump_location })
+    }
+
     /// Return a list of all invalid foreign references.
     /// Deletes the invalid rows if auto_delete is true.
     /// Param T should be the type of the foreign column.
@@ -78,12 +103,12 @@ impl FkChecker {
 
         let ids = conn.query::<Value, String>(query)?;
 
-        if self.dump_invalid_rows {
-            self.dump_rows(fk_info, &ids, conn)
+        if self.dump_invalid_rows && !ids.is_empty() {
+            self.dump_rows(fk_info, &ids, conn)?;
         }
 
-        if self.auto_delete {
-            self.delete_all(fk_info, &ids, conn);
+        if self.auto_delete && !ids.is_empty() {
+            self.delete_all(fk_info, &ids, conn)?;
         }
 
         let res: Vec<T> = ids.into_iter() // into_iter consumes the collection
@@ -95,39 +120,119 @@ impl FkChecker {
 
     /// Deletes all rows having an invalid foreign reference
     /// Performs one batch query
-    /// Error logged, not returned
-    /// FIXME delete might fail if this row is referenced in another table
-    fn delete_all(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut Conn) {
+    fn delete_all(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut Conn)-> Result<()>  {
         let query = format!("DELETE FROM {}.{} WHERE {}=?", fk_info.schema, fk_info.table, fk_info.column);
-        let bar = query.with(ids.iter().map(|x| (x,))).batch(conn);
-        if let Err(error) = bar {
-            println!("ERROR: Could not batch delete rows having an invalid foreign reference from table {}.{}", fk_info.schema, fk_info.table);
-            println!("ERROR: {error}");
-        }
+        query.with(ids.iter().map(|x| (x,))).batch(conn)
     }
 
-    fn dump_rows(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut Conn) {
+    /// Dumps all rows
+    fn dump_rows(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut Conn) -> Result<()> {
         let query = format!("SELECT * FROM {}.{} WHERE {}=?", fk_info.schema, fk_info.table, fk_info.column);
-        let preped = conn.prep(query).unwrap();
-        
+        let preped = conn.prep(query)?;
+
+        let mut col_disp = true;
+        // Output to dump_location, or to stdout
+        let mut out: Box<dyn io::Write> = match self.dump_location.is_empty() {
+            true => Box::new(stdout()),
+            false => {
+                let fname = fk_info.name.clone().add(".csv");
+                let path = Path::new(self.dump_location.as_str()).join(fname);
+                Box::new(BufWriter::new(fs::File::create(path)?))
+            }
+        };
+
         for id in ids {
-            // FIXME use exec_iter to merge all results for all ids
-            let res = conn.exec_map(&preped, (id,),move |row: Row| {
-                // FIXME get rid of map to preserve order of columns
-                let mut res: HashMap<String, Option<String>> = HashMap::new();
+            let it = conn.exec_iter(&preped, (id,))?;
+
+            if col_disp {
+                for col in it.columns().as_ref() {
+                    out.write(col.name_ref())?;
+                    out.write(", ".as_bytes())?;
+                }
+                out.write("\n".as_bytes())?;
+                col_disp = false;
+            }
+            
+            for mut row in it.flat_map(|rs| rs.into_iter()) {
 
                 for idx in 0..row.len() {
-                    let key = row.columns_ref()[idx].name_str().to_string();
-                    let val: Option<Value> = row.get(idx);
-                    let val = val.map(|v| v.as_sql(true));
-                    res.insert(key, val);
+                    let val = row.take::<Value, usize>(idx)
+                        .map(|v| v.as_sql(true))
+                        .unwrap_or_else(|| String::from("NULL"));
+                    out.write(val.as_bytes())?;
+                    out.write(", ".as_bytes())?;
                 }
-                res
-            });
-            match serde_json::ser::to_string(&res.unwrap()) {
-                Ok(s) => println!("{s}"),
-                Err(e) => println!("ERROR: {e}")
+                out.write("\n".as_bytes())?;
             }
         }
+        Ok(())
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use std::{fs::{File, self}, path::Path};
+
+    use super::FkChecker;
+
+    #[test]
+    fn should_handle_empty_dump_location() {
+        let foo = FkChecker::new(true, true, String::new());
+        assert!(foo.is_ok());
+        let bar = foo.unwrap();
+        assert!(bar.auto_delete);
+        assert!(bar.dump_invalid_rows);
+        assert!(bar.dump_location.is_empty());
+    }
+
+    #[test]
+    fn invalid_dump_location_is_err() {
+        let path = Path::new("dump_file.txt");
+        File::create(path).expect("create should work in test folder");
+        assert!(path.exists());
+
+        let dump_loc: String = String::from(path.to_str().unwrap());
+        let foo = FkChecker::new(true, true, dump_loc);
+        assert!(foo.is_err());
+        fs::remove_file(path).expect("delete should work in test folder")
+    }
+
+    #[test]
+    fn should_create_dump_folder() {
+        let dump_loc_str = "dump_dir1";
+        let path = Path::new(dump_loc_str);
+        if path.exists() {
+            fs::remove_dir(path).expect("dump_dir should be removable in test folder");
+        }
+
+        let dump_loc: String = String::from(dump_loc_str);
+        let foo = FkChecker::new(false, false, dump_loc);
+        assert!(foo.is_ok());
+        let bar = foo.unwrap();
+        assert!(!bar.auto_delete);
+        assert!(!bar.dump_invalid_rows);
+        assert_eq!(bar.dump_location, dump_loc_str);
+        assert!(path.is_dir());
+        fs::remove_dir(path).expect("dump_dir should be removable in test folder");
+    }
+
+    #[test]
+    fn should_use_dump_folder() {
+        let dump_loc_str = "dump_dir2";
+        let path = Path::new(dump_loc_str);
+        if !path.exists() {
+            fs::create_dir(path).expect("dump_dir should be creatable in test folder");
+        }
+
+        let dump_loc: String = String::from(dump_loc_str);
+        let foo = FkChecker::new(false, false, dump_loc);
+        assert!(foo.is_ok());
+        let bar = foo.unwrap();
+        assert!(!bar.auto_delete);
+        assert!(!bar.dump_invalid_rows);
+        assert_eq!(bar.dump_location, dump_loc_str);
+        assert!(path.is_dir());
+        fs::remove_dir(path).expect("dump_dir should be removable in test folder");
     }
 }

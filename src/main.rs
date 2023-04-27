@@ -23,7 +23,7 @@ fn main() {
 
     println!("Found {} Foreign Key Constraints to check...", fk_constraints.len());
 
-    let checker = FkChecker { auto_delete, dump_invalid_rows };
+    let checker = exit_on_err!(FkChecker::new(auto_delete, dump_invalid_rows, String::from("dumps")), "Could not initialise FK checker");
     for fk in fk_constraints {
         println!("Checking Foreign Key constraint {fk}");
         let res = checker.check::<u32>(&fk, &mut conn);
