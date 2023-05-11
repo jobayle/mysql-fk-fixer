@@ -57,6 +57,8 @@ impl Display for FkInfo {
     }
 }
 
+// TODO: redo without RC using NotNull and unsafe {}, then from should returned a pinned struct
+// see: https://doc.rust-lang.org/std/pin/index.html
 pub struct FkIndex {
     fks: Vec<Rc<FkInfo>>,
     fks_by_name: HashMap<String, Rc<FkInfo>>,

@@ -1,14 +1,15 @@
+//! Foreign Key Constraint checker (finds invalid foreign references in the database)
 
 use std::ops::Add;
 use std::path::Path;
 use std::{fs, io};
-use std::io::{stdout, Write, ErrorKind, BufWriter};
+use std::io::{stdout, ErrorKind, BufWriter};
 
 use mysql::*;
 use mysql::prelude::*;
-use mysql::consts::ColumnType;
 
 use crate::fk::FkInfo;
+use crate::tabledumper;
 
 /// Configuration for function check()
 pub struct FkChecker {
@@ -96,96 +97,16 @@ impl FkChecker {
             let it = conn.exec_iter(&preped, (id,))?;
 
             if col_disp {
-                for col in it.columns().as_ref() {
-                    out.write(col.name_ref())?;
-                    out.write(", ".as_bytes())?;
-                }
-                out.write("\n".as_bytes())?;
-                for col in it.columns().as_ref() {
-                    out.write(FkChecker::coltype_to_str(col.column_type()).as_bytes())?;
-                    out.write(", ".as_bytes())?;
-                }
-                out.write("\n".as_bytes())?;
+                tabledumper::dump_columns(out.as_mut(), it.columns().as_ref())?;
                 col_disp = false;
             }
             
             for mut row in it.flat_map(|rs| rs.into_iter()) {
-
-                for idx in 0..row.len() {
-                    let val = FkChecker::value_to_string(row.take::<Value, usize>(idx), &row.columns_ref()[idx]);
-                    out.write(val.as_bytes())?;
-                    out.write(", ".as_bytes())?;
-                }
-                out.write("\n".as_bytes())?;
+                tabledumper::dump_row(out.as_mut(), &mut row)?
             }
+            
         }
         Ok(())
-    }
-
-    /// Cast value to String according to the data/column-type/column-length
-    fn value_to_string(val: Option<Value>, column: &Column) -> String {
-        let coltype = column.column_type();
-        let mut res: Option<String> = None;
-        if val.is_some() {
-            // Case boolean
-            if coltype == ColumnType::MYSQL_TYPE_BIT && column.column_length() == 1 {
-                res = val
-                    .filter (|v| if let Value::Bytes(_) = v { true } else { false })
-                    .map(|v| if let Value::Bytes(vec) = v { vec } else { unreachable!() })
-                    .map(|v| if v.len() == 1 && v[0] == 1 { "true" } else { "false" })
-                    .map(String::from);
-            }
-            // Case binary data
-            else if coltype == ColumnType::MYSQL_TYPE_BIT
-                || coltype == ColumnType::MYSQL_TYPE_LONG_BLOB
-                || coltype == ColumnType::MYSQL_TYPE_TINY_BLOB
-                || coltype == ColumnType::MYSQL_TYPE_MEDIUM_BLOB {
-                res = Some( String::from("<Binary data>"));
-            }
-            else {
-                res = val.map(|v| v.as_sql(true));
-            }
-        }
-        res.unwrap_or_else(|| String::from("NULL"))
-    }
-
-    /// Return a printable column type
-    fn coltype_to_str(coltype: ColumnType) -> &'static str {
-        match coltype {
-            ColumnType::MYSQL_TYPE_DECIMAL => "DECIMAL",
-            ColumnType::MYSQL_TYPE_TINY => "TINY",
-            ColumnType::MYSQL_TYPE_SHORT => "SHORT",
-            ColumnType::MYSQL_TYPE_LONG => "LONG",
-            ColumnType::MYSQL_TYPE_FLOAT => "FLOAT",
-            ColumnType::MYSQL_TYPE_DOUBLE => "DOUBLE",
-            ColumnType::MYSQL_TYPE_NULL => "NULL",
-            ColumnType::MYSQL_TYPE_TIMESTAMP => "TIMESTAMP",
-            ColumnType::MYSQL_TYPE_LONGLONG => "LONGLONG",
-            ColumnType::MYSQL_TYPE_INT24 => "INT24",
-            ColumnType::MYSQL_TYPE_DATE => "DATE",
-            ColumnType::MYSQL_TYPE_TIME => "TIME",
-            ColumnType::MYSQL_TYPE_DATETIME => "DATETIME",
-            ColumnType::MYSQL_TYPE_YEAR => "YEAR",
-            ColumnType::MYSQL_TYPE_NEWDATE => "NEWDATE",
-            ColumnType::MYSQL_TYPE_VARCHAR => "VARCHAR",
-            ColumnType::MYSQL_TYPE_BIT => "BIT",
-            ColumnType::MYSQL_TYPE_TIMESTAMP2 => "TIMESTAMP2",
-            ColumnType::MYSQL_TYPE_DATETIME2 => "DATETIME2",
-            ColumnType::MYSQL_TYPE_TIME2 => "TIME2",
-            ColumnType::MYSQL_TYPE_TYPED_ARRAY => "TYPED_ARRAY",
-            ColumnType::MYSQL_TYPE_UNKNOWN => "UNKNOWN",
-            ColumnType::MYSQL_TYPE_JSON => "JSON",
-            ColumnType::MYSQL_TYPE_NEWDECIMAL => "NEWDECIMAL",
-            ColumnType::MYSQL_TYPE_ENUM => "ENUM",
-            ColumnType::MYSQL_TYPE_SET => "SET",
-            ColumnType::MYSQL_TYPE_TINY_BLOB => "TINY_BLOB",
-            ColumnType::MYSQL_TYPE_MEDIUM_BLOB => "MEDIUM_BLOB",
-            ColumnType::MYSQL_TYPE_LONG_BLOB => "LONG_BLOB",
-            ColumnType::MYSQL_TYPE_BLOB => "BLOB",
-            ColumnType::MYSQL_TYPE_VAR_STRING => "VAR_STRING",
-            ColumnType::MYSQL_TYPE_STRING => "STRING",
-            ColumnType::MYSQL_TYPE_GEOMETRY => "GEOMETRY",
-        }
     }
 }
 
