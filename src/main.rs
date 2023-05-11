@@ -2,7 +2,10 @@ use mysql::{Conn, Opts};
 use dotenvy_macro::dotenv;
 
 pub mod fk;
-use fk::{FkInfo, FkChecker};
+use fk::FkInfo;
+
+pub mod fkchecker;
+use fkchecker::FkChecker;
 
 pub mod utils;
 use utils::{exit_on_err, continue_on_err};
