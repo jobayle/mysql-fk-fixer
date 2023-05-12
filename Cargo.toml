@@ -5,5 +5,5 @@ edition = "2021"
 
 [dependencies]
 dotenvy_macro = "0.15.7"
-mysql = "*"
-mysql_common = "*"
+mysql = "23.0.1"
+mysql_common = "^0.29.2"
