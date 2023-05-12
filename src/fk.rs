@@ -143,4 +143,18 @@ mod test {
 
     }
 
+    #[test]
+    fn test_fmt() {
+        let fk = FkInfo {
+            name: String::from("NAME"),
+            schema: String::from("SCHEMA"),
+            table: String::from("TABLE"),
+            column: String::from("COLUMN"),
+            ref_table: String::from("REF_TABLE"),
+            ref_column: String::from("REF_COLUMN")
+        };
+        let res = format!("{}", fk);
+        assert_eq!(res, "NAME in schema SCHEMA on table TABLE column COLUMN referencing table REF_TABLE column REF_COLUMN");
+    }
+
 }
