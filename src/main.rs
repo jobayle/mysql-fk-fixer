@@ -7,7 +7,7 @@ use fk::FkInfo;
 pub mod fkchecker;
 use fkchecker::FkChecker;
 
-pub mod tabledumper;
+pub mod datadumper;
 
 pub mod utils;
 use utils::{exit_on_err, continue_on_err};

@@ -6,24 +6,36 @@ use mysql::*;
 use mysql::consts::ColumnType;
 
 pub fn dump_columns(out: &mut dyn io::Write, columns: &[Column]) -> Result<()> {
+    let mut comma: bool = false;
     for col in columns {
+        if comma {
+            out.write(",".as_bytes())?;
+        }
         out.write(col.name_ref())?;
-        out.write(", ".as_bytes())?;
+        comma = true;
     }
     out.write("\n".as_bytes())?;
+    comma = false;
     for col in columns {
+        if comma {
+            out.write(",".as_bytes())?;
+        }
         out.write(coltype_to_str(col.column_type()).as_bytes())?;
-        out.write(", ".as_bytes())?;
+        comma = true;
     }
     out.write("\n".as_bytes())?;
     Ok(())
 }
 
 pub fn dump_row(out: &mut dyn io::Write, row: &mut Row) -> Result<()> {
+    let mut comma = false;
     for idx in 0..row.len() {
+        if comma {
+            out.write(",".as_bytes())?;
+        }
         let val = value_to_string(row.take::<Value, usize>(idx), &row.columns_ref()[idx]);
         out.write(val.as_bytes())?;
-        out.write(", ".as_bytes())?;
+        comma = true;
     }
     out.write("\n".as_bytes())?;
     Ok(())
@@ -50,7 +62,18 @@ pub fn value_to_string(val: Option<Value>, column: &Column) -> String {
             res = Some( String::from("<Binary data>"));
         }
         else {
-            res = val.map(|v| v.as_sql(true));
+            res = val.map(|v| {
+                let mut res = v.as_sql(false);
+                // Replace the quotes surrounding string `res` with double-quotes
+                let first = res.chars().nth(0).unwrap_or('c');
+                let last = res.chars().nth_back(0).unwrap_or('c');
+                let len = res.len();
+                if first == '\'' && last == '\'' {
+                    res.replace_range(0..1, "\"");
+                    res.replace_range(len-1..len, "\"");
+                }
+                res
+            });
         }
     }
     res.unwrap_or_else(|| String::from("NULL"))
@@ -112,7 +135,7 @@ mod test {
 
             let end: usize = write.position().try_into().unwrap();
             let res = String::from_utf8_lossy(&write.get_mut().as_slice()[0..end]);
-            let cmp = format!("name, \n{}, \n", coltype_to_str(coltype));
+            let cmp = format!("name\n{}\n", coltype_to_str(coltype));
             assert_eq!(res, cmp);
         };
 
@@ -157,8 +180,12 @@ mod test {
     
     #[test]
     fn test_dump_row() {
-        let columns = Arc::new([Column::new(ColumnType::MYSQL_TYPE_BIT)]);
-        let mut row = mysql_common::row::new_row(vec![Value::NULL], columns);
+        let columns = Arc::new([
+            Column::new(ColumnType::MYSQL_TYPE_BIT),
+            Column::new(ColumnType::MYSQL_TYPE_LONG),
+            Column::new(ColumnType::MYSQL_TYPE_VARCHAR),
+        ]);
+        let mut row = mysql_common::row::new_row(vec![Value::NULL, Value::Int(22), Value::Bytes(vec![b'a', b'b', b'c'])], columns);
 
         let mut write = Cursor::new(vec![0u8; 128]);
 
@@ -166,14 +193,14 @@ mod test {
 
         let end: usize = write.position().try_into().unwrap();
         let res = String::from_utf8_lossy(&write.get_mut().as_slice()[0..end]);
-        assert_eq!(res, "<Binary data>, \n");
+        assert_eq!(res, "<Binary data>,22,\"abc\"\n");
     }
 
     #[test]
     fn test_value_to_string() {
         let column = Column::new(ColumnType::MYSQL_TYPE_VARCHAR);
         let res = value_to_string(Option::Some(Value::Bytes(Vec::<u8>::from("value"))), &column);
-        assert_eq!(res, "'value'");
+        assert_eq!(res, "\"value\"");
     }
     
     #[test]

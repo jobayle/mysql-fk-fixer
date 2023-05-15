@@ -9,7 +9,7 @@ use mysql::*;
 use mysql::prelude::*;
 
 use crate::fk::FkInfo;
-use crate::tabledumper;
+use crate::datadumper;
 
 /// Configuration for function check()
 pub struct FkChecker {
@@ -97,12 +97,12 @@ impl FkChecker {
             let it = conn.exec_iter(&preped, (id,))?;
 
             if col_disp {
-                tabledumper::dump_columns(out.as_mut(), it.columns().as_ref())?;
+                datadumper::dump_columns(out.as_mut(), it.columns().as_ref())?;
                 col_disp = false;
             }
             
             for mut row in it.flat_map(|rs| rs.into_iter()) {
-                tabledumper::dump_row(out.as_mut(), &mut row)?
+                datadumper::dump_row(out.as_mut(), &mut row)?
             }
             
         }
