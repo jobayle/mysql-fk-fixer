@@ -33,8 +33,8 @@ impl FkInfo {
     }
 
     /// Get all the FK constraints using given connection to MySQL (should be using schema information_schema)
-    pub fn query_fk_constraints(conn: &mut Conn) -> Result<Vec<Self>> {
-        let res = conn.query_map(
+    pub fn query_fk_constraints(conn: &mut Conn, schema: Option<&String>) -> Result<Vec<Self>> {
+        let mut query = String::from(
             r"SELECT
                 k.CONSTRAINT_NAME,
                 k.CONSTRAINT_SCHEMA,
@@ -44,7 +44,11 @@ impl FkInfo {
                 k.REFERENCED_COLUMN_NAME
             FROM information_schema.KEY_COLUMN_USAGE k
             JOIN information_schema.TABLE_CONSTRAINTS c ON k.CONSTRAINT_NAME=c.CONSTRAINT_NAME AND c.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA
-            WHERE c.CONSTRAINT_TYPE='FOREIGN KEY';", |t| FkInfo::new(t))?;
+            WHERE c.CONSTRAINT_TYPE='FOREIGN KEY'");
+        if let Some(schema_name) = schema {
+            query = format!("{query} AND k.CONSTRAINT_SCHEMA='{schema_name}'");
+        }
+        let res = conn.query_map(query, |t| FkInfo::new(t))?;
     
         Ok(res)
     }
