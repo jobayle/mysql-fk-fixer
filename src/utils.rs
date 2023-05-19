@@ -5,8 +5,8 @@ macro_rules! exit_on_err {
         {
             let var = $x;
             if let Err(what) = var {
-                println!("ERROR: {}", $y);
-                println!("{what}");
+                eprintln!("ERROR: {}", $y);
+                eprintln!("{what}");
                 return;
             }
             var.unwrap()
@@ -22,8 +22,8 @@ macro_rules! continue_on_err {
         {
             let var = $x;
             if let Err(what) = var {
-                println!("ERROR: {}", $y);
-                println!("{what}");
+                eprintln!("ERROR: {}", $y);
+                eprintln!("{what}");
                 continue;
             }
             var.unwrap()
