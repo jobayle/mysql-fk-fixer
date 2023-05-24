@@ -42,8 +42,8 @@ impl FkChecker {
     /// Return a list of all invalid foreign references.
     /// Deletes the invalid rows if auto_delete is true.
     /// Param T should be the type of the foreign column.
-    pub fn check<T>(&self, fk_info: &FkInfo, conn: &mut Conn) -> Result<Vec<T>>
-    where T: FromValue
+    pub fn check<T, C>(&self, fk_info: &FkInfo, conn: &mut C) -> Result<Vec<T>>
+        where T: FromValue, C: Queryable
     {
         let query = format!(
             r"SELECT a.{}
@@ -71,13 +71,17 @@ impl FkChecker {
 
     /// Deletes all rows having an invalid foreign reference
     /// Performs one batch query
-    fn delete_all(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut Conn)-> Result<()>  {
+    fn delete_all<C>(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut C)-> Result<()>
+        where C: Queryable
+    {
         let query = format!("DELETE FROM {}.{} WHERE {}=?", fk_info.schema, fk_info.table, fk_info.column);
-        query.with(ids.iter().map(|x| (x,))).batch(conn)
+        conn.exec_batch(query, ids.iter().map(|x| (x,)))
     }
 
     /// Dumps all rows
-    fn dump_rows(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut Conn) -> Result<()> {
+    fn dump_rows<C>(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut C) -> Result<()>
+        where C: Queryable
+    {
         let query = format!("SELECT * FROM {}.{} WHERE {}=?", fk_info.schema, fk_info.table, fk_info.column);
         let preped = conn.prep(query)?;
 

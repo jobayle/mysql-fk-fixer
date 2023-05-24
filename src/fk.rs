@@ -33,7 +33,9 @@ impl FkInfo {
     }
 
     /// Get all the FK constraints using given connection to MySQL (should be using schema information_schema)
-    pub fn query_fk_constraints(conn: &mut Conn, schema: Option<&String>) -> Result<Vec<Self>> {
+    pub fn query_fk_constraints<T>(conn: &mut T, schema: Option<&String>) -> Result<Vec<Self>>
+        where T: Queryable
+    {
         let mut query = String::from(
             r"SELECT
                 k.CONSTRAINT_NAME,
@@ -64,10 +66,10 @@ impl Display for FkInfo {
 // TODO: redo without RC using NotNull and unsafe {}, then from should returned a pinned struct
 // see: https://doc.rust-lang.org/std/pin/index.html
 pub struct FkIndex {
-    fks: Vec<Rc<FkInfo>>,
-    fks_by_name: HashMap<String, Rc<FkInfo>>,
-    fks_by_table: HashMap<String, Vec<Rc<FkInfo>>>,
-    fks_by_ref_table: HashMap<String, Vec<Rc<FkInfo>>>,
+    pub fks: Vec<Rc<FkInfo>>,
+    pub fks_by_name: HashMap<String, Rc<FkInfo>>,
+    pub fks_by_table: HashMap<String, Vec<Rc<FkInfo>>>,
+    pub fks_by_ref_table: HashMap<String, Vec<Rc<FkInfo>>>,
 }
 
 // Pre indexed list of FkInfo, by constraint name / table name / referenced table name

@@ -6,7 +6,7 @@ pub mod args;
 use args::{AppArgs, Command, CheckFkArgs};
 
 pub mod fk;
-use fk::FkInfo;
+use fk::{FkInfo, FkIndex};
 
 pub mod fkchecker;
 use fkchecker::FkChecker;
@@ -15,6 +15,7 @@ pub mod datadumper;
 
 pub mod tabledumper;
 
+#[macro_use]
 pub mod utils;
 use utils::{exit_on_err, continue_on_err};
 
@@ -28,14 +29,14 @@ fn get_conn(args: &AppArgs) -> Result<Conn> {
 }
 
 fn check_fks(mut conn: &mut Conn, schema: Option<&String>, args: CheckFkArgs) {
-    let fk_constraints = exit_on_err!(FkInfo::query_fk_constraints(conn, schema), "Could not get list of FK constraints");
+    let fk_constraints = FkIndex::from(exit_on_err!(FkInfo::query_fk_constraints(conn, schema), "Could not get list of FK constraints"));
 
-    println!("Found {} Foreign Key Constraints to check...", fk_constraints.len());
+    println!("Found {} Foreign Key Constraints to check...", fk_constraints.fks.len());
 
     let checker = exit_on_err!(FkChecker::new(args.auto_delete, args.dump_invalid_rows, args.dump_loc), "Could not initialise FK checker");
-    for fk in fk_constraints {
+    for fk in fk_constraints.fks {
         println!("Checking Foreign Key constraint {fk}");
-        let res = checker.check::<u32>(&fk, &mut conn);
+        let res = checker.check::<u32, Conn>(&fk, &mut conn);
         let res = continue_on_err!(res, "Could not check Foreign Key Constraint");
         if res.len() > 0 {
             println!("{} invalid foreign references found in table {} column {}", res.len(), fk.table, fk.column);
