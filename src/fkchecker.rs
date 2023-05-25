@@ -8,7 +8,7 @@ use std::io::{stdout, ErrorKind, BufWriter};
 use mysql::*;
 use mysql::prelude::*;
 
-use crate::fk::FkInfo;
+use crate::fk::{FkInfo, FkIndex};
 use crate::datadumper;
 
 /// Configuration for function check()
@@ -42,7 +42,7 @@ impl FkChecker {
     /// Return a list of all invalid foreign references.
     /// Deletes the invalid rows if auto_delete is true.
     /// Param T should be the type of the foreign column.
-    pub fn check<T, C>(&self, fk_info: &FkInfo, conn: &mut C) -> Result<Vec<T>>
+    pub fn check<T, C>(&self, fk_info: &FkInfo, fk_idx: &FkIndex, conn: &mut C) -> Result<Vec<T>>
         where T: FromValue, C: Queryable
     {
         let query = format!(
@@ -55,7 +55,7 @@ impl FkChecker {
         let ids = conn.query::<Value, String>(query)?;
 
         if self.dump_invalid_rows && !ids.is_empty() {
-            self.dump_rows(fk_info, &ids, conn)?;
+            self.dump_rows(fk_info, &ids, fk_idx, conn)?;
         }
 
         if self.auto_delete && !ids.is_empty() {
@@ -79,10 +79,21 @@ impl FkChecker {
     }
 
     /// Dumps all rows
-    fn dump_rows<C>(&self, fk_info: &FkInfo, ids: &Vec<Value>, conn: &mut C) -> Result<()>
+    fn dump_rows<C>(&self, fk_info: &FkInfo, ids: &Vec<Value>, fk_idx: &FkIndex, conn: &mut C) -> Result<()>
         where C: Queryable
     {
-        let query = format!("SELECT * FROM {}.{} WHERE {}=?", fk_info.schema, fk_info.table, fk_info.column);
+        let mut query = format!("SELECT * FROM {}.{}", fk_info.schema, fk_info.table);
+        if let Some(fks) = fk_idx.fks_by_table.get(&fk_info.table) {
+            if fks.len() > 1 {
+                if let Some(clause) = fks.iter()
+                    .filter(|f| f.name != fk_info.name)
+                    .map(|f| format!(" LEFT JOIN {}.{} ON {}.{}={}.{}", f.schema, f.ref_table, f.table, f.column, f.ref_table, f.ref_column))
+                    .reduce(|acc, e| acc + &e) {
+                        query = query.add(&clause);
+                    }
+            }
+        }
+        query = query + &format!(" WHERE {}=?;", fk_info.column);
         let preped = conn.prep(query)?;
 
         let mut col_disp = true;

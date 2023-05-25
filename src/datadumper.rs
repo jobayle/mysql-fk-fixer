@@ -11,6 +11,8 @@ pub fn dump_columns(out: &mut dyn io::Write, columns: &[Column]) -> Result<()> {
         if comma {
             out.write(",".as_bytes())?;
         }
+        out.write(col.table_ref())?;
+        out.write(".".as_bytes())?;
         out.write(col.name_ref())?;
         comma = true;
     }
@@ -129,13 +131,13 @@ mod test {
         let mut write = Cursor::new(vec![0u8; 128]);
 
         let mut check = |coltype| {
-            let columns = [Column::new(coltype).with_name(b"name")];
+            let columns = [Column::new(coltype).with_name(b"name").with_table(b"table")];
             write.set_position(0);
             assert!(dump_columns(&mut write, &columns).is_ok()); // No IO error
 
             let end: usize = write.position().try_into().unwrap();
             let res = String::from_utf8_lossy(&write.get_mut().as_slice()[0..end]);
-            let cmp = format!("name\n{}\n", coltype_to_str(coltype));
+            let cmp = format!("table.name\n{}\n", coltype_to_str(coltype));
             assert_eq!(res, cmp);
         };
 

@@ -34,9 +34,9 @@ fn check_fks(mut conn: &mut Conn, schema: Option<&String>, args: CheckFkArgs) {
     println!("Found {} Foreign Key Constraints to check...", fk_constraints.fks.len());
 
     let checker = exit_on_err!(FkChecker::new(args.auto_delete, args.dump_invalid_rows, args.dump_loc), "Could not initialise FK checker");
-    for fk in fk_constraints.fks {
+    for fk in fk_constraints.fks.iter() {
         println!("Checking Foreign Key constraint {fk}");
-        let res = checker.check::<u32, Conn>(&fk, &mut conn);
+        let res = checker.check::<u32, Conn>(&fk, &fk_constraints, &mut conn);
         let res = continue_on_err!(res, "Could not check Foreign Key Constraint");
         if res.len() > 0 {
             println!("{} invalid foreign references found in table {} column {}", res.len(), fk.table, fk.column);
