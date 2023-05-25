@@ -1,9 +1,7 @@
-use std::path::PathBuf;
-
 use mysql::{Conn, Opts, Result};
 
 pub mod args;
-use args::{AppArgs, Command, CheckFkArgs};
+use args::AppArgs;
 
 pub mod fk;
 use fk::{FkInfo, FkIndex};
@@ -12,8 +10,6 @@ pub mod fkchecker;
 use fkchecker::FkChecker;
 
 pub mod datadumper;
-
-pub mod tabledumper;
 
 #[macro_use]
 pub mod utils;
@@ -28,8 +24,8 @@ fn get_conn(args: &AppArgs) -> Result<Conn> {
     Ok(res)
 }
 
-fn check_fks(mut conn: &mut Conn, schema: Option<&String>, args: CheckFkArgs) {
-    let fk_constraints = FkIndex::from(exit_on_err!(FkInfo::query_fk_constraints(conn, schema), "Could not get list of FK constraints"));
+fn check_fks(mut conn: &mut Conn, args: AppArgs) {
+    let fk_constraints = FkIndex::from(exit_on_err!(FkInfo::query_fk_constraints(conn, args.schema.as_ref()), "Could not get list of FK constraints"));
 
     println!("Found {} Foreign Key Constraints to check...", fk_constraints.fks.len());
 
@@ -44,15 +40,7 @@ fn check_fks(mut conn: &mut Conn, schema: Option<&String>, args: CheckFkArgs) {
     }
 }
 
-fn dump_all(conn: &mut Conn, schema: Option<&String>, _: Option<PathBuf>) {
-    exit_on_err!(tabledumper::dump_all_tables(conn, schema.expect("Schema is mandatory")), "Dump all op failed");
-}
-
 pub fn run(args: AppArgs) {
     let mut conn = exit_on_err!(get_conn(&args), "Could not connect to MySQL");
-
-    match args.command {
-        Command::CheckFk(check_fk_args) => check_fks(&mut conn, args.schema.as_ref(), check_fk_args),
-        Command::DumpAll(loc) => dump_all(&mut conn, args.schema.as_ref(), loc),
-    }
+    check_fks(&mut conn, args);
 }

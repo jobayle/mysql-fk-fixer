@@ -4,7 +4,7 @@ use std::path::{PathBuf, Path};
 use mysql::prelude::*;
 use mysql::{Conn, Opts};
 use mysql_fk_fixer::run;
-use mysql_fk_fixer::args::{AppArgs, Command, CheckFkArgs};
+use mysql_fk_fixer::args::AppArgs;
 
 const DB_URL: &'static str = "mysql://root:root@localhost/";
 
@@ -31,13 +31,9 @@ fn it_run_dump() {
     let dump_folder = PathBuf::from("it_dumps");
     clean_dump_folder(&dump_folder);
     let args = AppArgs {
-        command: Command::CheckFk(
-            CheckFkArgs {
-                auto_delete: false,
-                dump_invalid_rows: true,
-                dump_loc: Some(dump_folder.clone())
-            }
-        ),
+        auto_delete: false,
+        dump_invalid_rows: true,
+        dump_loc: Some(dump_folder.clone()),
         db_url: String::from(DB_URL),
         schema: Some(String::from("dump"))
     };
@@ -55,13 +51,9 @@ fn it_run_dump() {
 #[test]
 fn it_run_delete_all() {
     let args = AppArgs {
-        command: Command::CheckFk(
-            CheckFkArgs {
-                auto_delete: true,
-                dump_invalid_rows: false,
-                dump_loc: None
-            }
-        ),
+        auto_delete: true,
+        dump_invalid_rows: false,
+        dump_loc: None,
         db_url: String::from(DB_URL),
         schema: Some(String::from("del"))
     };
