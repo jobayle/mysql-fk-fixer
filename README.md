@@ -24,7 +24,7 @@ $ ./mysql_fk_fixer 'mysql://root:root@localhost/' --schema foobar
 Connecting to mysql://root:root@localhost/
 MySQL server version: 5.7.40
 Found 2 Foreign Key Constraints to check...
-Checking Foreign Key constraint baz_ibfk_1 in schema del on table baz column foo_id referencing table foo column id
-Checking Foreign Key constraint baz_ibfk_2 in schema del on table baz column bar_id referencing table bar column id
+Checking Foreign Key constraint baz_ibfk_1 in schema foobar on table baz column foo_id referencing table foo column id
+Checking Foreign Key constraint baz_ibfk_2 in schema foobar on table baz column bar_id referencing table bar column id
 1 invalid foreign references found in table baz column bar_id
 ```
