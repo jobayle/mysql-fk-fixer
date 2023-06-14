@@ -17,6 +17,7 @@ pub(crate) use exit_on_err;
 
 /// Run expression returning a Result<>, If Err() logs the error and return; else unwrap()
 /// Just like exit_on_err, except it's made for loops
+#[allow(unused_macros)]
 macro_rules! continue_on_err {
     ( $x:expr, $y:expr ) => {
         {
@@ -30,4 +31,5 @@ macro_rules! continue_on_err {
         }
     };
 }
+#[allow(unused_imports)]
 pub(crate) use continue_on_err;
