@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use mysql::*;
 use mysql::prelude::*;
@@ -64,16 +64,16 @@ impl Display for FkInfo {
 }
 
 pub struct FkIndex {
-    pub fks: Vec<Rc<FkInfo>>,
-    pub fks_by_name: HashMap<String, Rc<FkInfo>>,
-    pub fks_by_table: HashMap<String, Vec<Rc<FkInfo>>>,
-    pub fks_by_ref_table: HashMap<String, Vec<Rc<FkInfo>>>,
+    pub fks: Vec<Arc<FkInfo>>,
+    pub fks_by_name: HashMap<String, Arc<FkInfo>>,
+    pub fks_by_table: HashMap<String, Vec<Arc<FkInfo>>>,
+    pub fks_by_ref_table: HashMap<String, Vec<Arc<FkInfo>>>,
 }
 
 // Pre indexed list of FkInfo, by constraint name / table name / referenced table name
 impl From<Vec<FkInfo>> for FkIndex {
     fn from(value: Vec<FkInfo>) -> Self {
-        let fks: Vec<Rc<FkInfo>> = value.into_iter().map(Rc::new).collect::<Vec<Rc<FkInfo>>>();
+        let fks: Vec<Arc<FkInfo>> = value.into_iter().map(Arc::new).collect::<Vec<Arc<FkInfo>>>();
         let mut res = FkIndex { fks: fks, fks_by_name: HashMap::new(), fks_by_table: HashMap::new(), fks_by_ref_table: HashMap::new() };
         res.fks.iter().for_each(|v| assert!(res.fks_by_name.insert(v.name.clone(), v.clone()).is_none()));
         res.fks.iter().for_each(|v| res.fks_by_table.entry(v.table.clone()).or_default().push(v.clone()));
